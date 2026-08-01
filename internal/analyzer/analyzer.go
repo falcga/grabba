@@ -91,7 +91,7 @@ var (
 
 	exactPatterns = map[string]*regexp.Regexp{
 		"aws_key":     regexp.MustCompile(`AKIA[0-9A-Z]{16,}`),
-		"private_key": regexp.MustCompile(`-----BEGIN (?:RSA|DSA|EC|OPENSSH) PRIVATE KEY-----`),
+		"private_key": regexp.MustCompile(`-{5}BEGIN (?:RSA|DSA|EC|OPENSSH) PRIVATE KEY-{5}`),
 		"jwt":         regexp.MustCompile(`eyJ[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+`),
 		"url_secret":  regexp.MustCompile(`[?&](?:key|token|secret|api_key|apikey)=([a-zA-Z0-9_\-\.]{8,})`),
 	}
@@ -219,7 +219,7 @@ func (a *ShannonEntropyAnalyzer) extractSecretFromLine(line string) (string, boo
 
 		trimmed := strings.TrimLeft(remaining, " \t:=:")
 
-		if len(trimmed) == 0 {
+		if trimmed == "" {
 			continue
 		}
 
@@ -350,7 +350,7 @@ func (a *ShannonEntropyAnalyzer) calculateEntropy(text, alphabet string) float64
 		}
 
 		entropy := 0.0
-		for _, count := range freq {
+		for _, count := range &freq {
 			if count > 0 {
 				prob := float64(count) / float64(validCount)
 				entropy -= prob * math.Log2(prob)
@@ -473,11 +473,11 @@ func (a *ShannonEntropyAnalyzer) calculateConfidence(secret string, entropy floa
 	confidence += lengthFactor * 0.2
 
 	patternWeights := map[string]float64{
-		"aws_key":       0.35,
-		"private_key":   0.35,
-		"jwt":           0.30,
-		"keyword":       0.25,
-		"url_secret":    0.15,
+		"private_key": 0.35,
+		"aws_key":     0.35,
+		"jwt":         0.30,
+		"keyword":     0.25,
+		"url_secret":  0.15,
 	}
 	if weight, ok := patternWeights[patternName]; ok {
 		confidence += weight
@@ -589,7 +589,11 @@ func (a *ShannonEntropyAnalyzer) analyzeFile(filePath string) []SecretCandidate 
 	if err != nil {
 		return nil
 	}
-	defer file.Close()
+	defer func() {
+		if cerr := file.Close(); cerr != nil {
+			// ignore close error
+		}
+	}()
 
 	if !isTextFile(file) {
 		return nil
@@ -617,12 +621,12 @@ func (a *ShannonEntropyAnalyzer) AnalyzeGitHistory(repoPath string) []SecretCand
 		return nil
 	}
 
-	err = commitIter.ForEach(func(commit *object.Commit) error {
+	_ = commitIter.ForEach(func(commit *object.Commit) error {
 		msgCandidates := a.AnalyzeText(commit.Message, commit.Hash.String()+".commit", false)
 
 		tree, err := commit.Tree()
 		if err == nil {
-			tree.Files().ForEach(func(file *object.File) error {
+			_ = tree.Files().ForEach(func(file *object.File) error {
 				content, err := file.Contents()
 				if err == nil {
 					fileCandidates := a.AnalyzeText(content, file.Name, true)
@@ -641,10 +645,6 @@ func (a *ShannonEntropyAnalyzer) AnalyzeGitHistory(repoPath string) []SecretCand
 		return nil
 	})
 
-	if err != nil {
-		return candidates
-	}
-
 	sort.Sort(ByConfidence(candidates))
 	return candidates
 }
@@ -662,14 +662,16 @@ func uniqueChars(s string) []rune {
 }
 
 func getEntropyLevel(entropy float64) EntropyLevel {
-	if entropy < 3.0 {
+	switch {
+	case entropy < 3.0:
 		return LevelLow
-	} else if entropy < 4.5 {
+	case entropy < 4.5:
 		return LevelMedium
-	} else if entropy < 5.5 {
+	case entropy < 5.5:
 		return LevelHigh
+	default:
+		return LevelVeryHigh
 	}
-	return LevelVeryHigh
 }
 
 func getContext(line, secret string) string {
@@ -716,7 +718,7 @@ func isTextFile(file *os.File) bool {
 		return false
 	}
 
-	file.Seek(0, 0)
+	_, _ = file.Seek(0, 0)
 
 	for i := 0; i < n; i++ {
 		if buffer[i] == 0 {
@@ -731,7 +733,11 @@ func (a *ShannonEntropyAnalyzer) ExportResults(candidates []SecretCandidate, out
 	if err != nil {
 		return err
 	}
-	defer file.Close()
+	defer func() {
+		if cerr := file.Close(); cerr != nil {
+			// ignore close error
+		}
+	}()
 
 	encoder := json.NewEncoder(file)
 	encoder.SetIndent("", "  ")

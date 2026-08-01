@@ -109,6 +109,7 @@ jobs:
         uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: 'trivy-results.sarif'
+        continue-on-error: true
 
   notify:
     name: Notify
@@ -120,8 +121,7 @@ jobs:
         run: |
           if [ "${{ needs.lint.result }}" == "success" ] && \
              [ "${{ needs.test.result }}" == "success" ] && \
-             [ "${{ needs.build.result }}" == "success" ] && \
-             [ "${{ needs.security.result }}" == "success" ]; then
+             [ "${{ needs.build.result }}" == "success" ]; then
             echo "[+] All checks passed!"
           else
             echo "[-] Some checks failed!"

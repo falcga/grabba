@@ -55,7 +55,6 @@ func main() {
 		os.Exit(0)
 	}
 
-	// Нормализация путей
 	if filePath != "" {
 		abs, err := filepath.Abs(filePath)
 		if err == nil {
@@ -67,7 +66,6 @@ func main() {
 		if err == nil {
 			repoPath = abs
 		}
-		// Проверка существования директории
 		if info, err := os.Stat(repoPath); err != nil || !info.IsDir() {
 			fmt.Printf("[-] Repository path '%s' does not exist or is not a directory\n", repoPath)
 			os.Exit(1)
@@ -80,7 +78,8 @@ func main() {
 
 	start := time.Now()
 
-	if filePath != "" {
+	switch {
+	case filePath != "":
 		fmt.Printf("[ ] Analyzing file: %s\n", filePath)
 		content, err := os.ReadFile(filePath)
 		if err != nil {
@@ -88,15 +87,13 @@ func main() {
 			os.Exit(1)
 		}
 		candidates = entropyAnalyzer.AnalyzeText(string(content), filePath, true)
-	} else if gitHistory {
+	case gitHistory:
 		fmt.Printf("[ ] Analyzing Git history: %s\n", repoPath)
 		candidates = entropyAnalyzer.AnalyzeGitHistory(repoPath)
-	} else {
+	default:
 		fmt.Printf("[ ] Analyzing repository: %s\n", repoPath)
-
 		exts := strings.Split(fileExtensions, ",")
 		excludes := strings.Split(excludeDirs, ",")
-
 		candidates = entropyAnalyzer.AnalyzeRepository(
 			repoPath,
 			exts,
@@ -140,14 +137,14 @@ func main() {
 				break
 			}
 
-			levelColor := ""
+			var levelColor string
 			switch c.Level {
 			case analyzer.LevelVeryHigh:
-				levelColor = "\033[31m" // red
+				levelColor = "\033[31m"
 			case analyzer.LevelHigh:
-				levelColor = "\033[33m" // yellow
+				levelColor = "\033[33m"
 			default:
-				levelColor = "\033[36m" // cyan
+				levelColor = "\033[36m"
 			}
 
 			fmt.Printf("%s[%d] Level: %s%s\033[0m\n", levelColor, i+1, levelColor, c.Level)
