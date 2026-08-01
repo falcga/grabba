@@ -19,15 +19,21 @@ import (
 	"github.com/go-git/go-git/v5/plumbing/object"
 )
 
+// EntropyLevel represents the level of entropy for a secret candidate.
 type EntropyLevel string
 
 const (
-	LevelLow      EntropyLevel = "low"
-	LevelMedium   EntropyLevel = "medium"
-	LevelHigh     EntropyLevel = "high"
+	// LevelLow indicates entropy below 3.0 bits.
+	LevelLow EntropyLevel = "low"
+	// LevelMedium indicates entropy between 3.0 and 4.5 bits.
+	LevelMedium EntropyLevel = "medium"
+	// LevelHigh indicates entropy between 4.5 and 5.5 bits.
+	LevelHigh EntropyLevel = "high"
+	// LevelVeryHigh indicates entropy above 5.5 bits.
 	LevelVeryHigh EntropyLevel = "very_high"
 )
 
+// SecretCandidate represents a potential secret found during analysis.
 type SecretCandidate struct {
 	Text              string       `json:"text"`
 	Entropy           float64      `json:"entropy"`
@@ -43,12 +49,14 @@ type SecretCandidate struct {
 	Confidence        float64      `json:"confidence"`
 }
 
+// ByConfidence implements sort.Interface for []SecretCandidate based on Confidence.
 type ByConfidence []SecretCandidate
 
 func (a ByConfidence) Len() int           { return len(a) }
 func (a ByConfidence) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
 func (a ByConfidence) Less(i, j int) bool { return a[i].Confidence > a[j].Confidence }
 
+// ShannonEntropyAnalyzer is the main struct that performs entropy‑based secret detection.
 type ShannonEntropyAnalyzer struct {
 	MinLength           int
 	MaxLength           int
@@ -63,6 +71,7 @@ type ShannonEntropyAnalyzer struct {
 	stats              AnalyzerStats
 }
 
+// AnalyzerStats holds statistics about the analysis run.
 type AnalyzerStats struct {
 	FilesScanned    int64
 	LinesProcessed  int64
@@ -102,12 +111,13 @@ var (
 		regexp.MustCompile(`^[a-f0-9]{64}$`),
 		regexp.MustCompile(`^[a-f0-9]{128}$`),
 		regexp.MustCompile(`^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$`),
-		regexp.MustCompile(`^[0-9]{6,}$`),
+		regexp.MustCompile(`^\d{6,}$`),
 		regexp.MustCompile(`^(?:test|example|demo|sample|dummy)[a-z]*$`),
 		regexp.MustCompile(`^(?:foo|bar|baz|qux)[a-z]*$`),
 	}
 )
 
+// NewAnalyzer creates a new analyzer with the given parameters.
 func NewAnalyzer(minLength, maxLength int, entropyThreshold, confidenceThreshold float64) *ShannonEntropyAnalyzer {
 	if minLength == 0 {
 		minLength = 8
@@ -136,6 +146,7 @@ func NewAnalyzer(minLength, maxLength int, entropyThreshold, confidenceThreshold
 	}
 }
 
+// AnalyzeText scans a text string for secrets and returns a list of candidates.
 func (a *ShannonEntropyAnalyzer) AnalyzeText(text, filePath string, lineNumbers bool) []SecretCandidate {
 	start := time.Now()
 	defer func() {
@@ -233,7 +244,8 @@ func (a *ShannonEntropyAnalyzer) extractSecretFromLine(line string) (string, boo
 				secret = trimmed[1:]
 			}
 		} else {
-			secretChars := regexp.MustCompile(`^[a-zA-Z0-9\+\/\=\-_\.]+`)
+			// #nosec G304 – this is a regex pattern, not user input
+			secretChars := regexp.MustCompile(`^[a-zA-Z0-9\+/=\-_.]+`)
 			match := secretChars.FindString(trimmed)
 			if match != "" {
 				secret = match
@@ -350,6 +362,7 @@ func (a *ShannonEntropyAnalyzer) calculateEntropy(text, alphabet string) float64
 		}
 
 		entropy := 0.0
+		// Use pointer to avoid copying the array
 		for _, count := range &freq {
 			if count > 0 {
 				prob := float64(count) / float64(validCount)
@@ -494,6 +507,7 @@ func (a *ShannonEntropyAnalyzer) calculateConfidence(secret string, entropy floa
 	return confidence
 }
 
+// AnalyzeRepository scans a Git repository for secrets.
 func (a *ShannonEntropyAnalyzer) AnalyzeRepository(repoPath string, fileExtensions []string, maxFileSize int64, excludeDirs []string) []SecretCandidate {
 	start := time.Now()
 	defer func() {
@@ -585,13 +599,14 @@ func (a *ShannonEntropyAnalyzer) AnalyzeRepository(repoPath string, fileExtensio
 }
 
 func (a *ShannonEntropyAnalyzer) analyzeFile(filePath string) []SecretCandidate {
+	// #nosec G304 – filePath is from trusted source (repository walk)
 	file, err := os.Open(filePath)
 	if err != nil {
 		return nil
 	}
 	defer func() {
 		if cerr := file.Close(); cerr != nil {
-			// ignore close error
+			// ignore
 		}
 	}()
 
@@ -607,6 +622,7 @@ func (a *ShannonEntropyAnalyzer) analyzeFile(filePath string) []SecretCandidate 
 	return a.AnalyzeText(string(content), filePath, true)
 }
 
+// AnalyzeGitHistory scans the entire Git history of a repository for secrets.
 func (a *ShannonEntropyAnalyzer) AnalyzeGitHistory(repoPath string) []SecretCandidate {
 	repo, err := git.PlainOpen(repoPath)
 	if err != nil {
@@ -693,7 +709,7 @@ func getContext(line, secret string) string {
 	}
 
 	context := line[ctxStart:ctxEnd]
-	masked := strings.Replace(context, secret, strings.Repeat("*", min(10, len(secret))), -1)
+	masked := strings.ReplaceAll(context, secret, strings.Repeat("*", min(10, len(secret))))
 	return masked
 }
 
@@ -728,6 +744,7 @@ func isTextFile(file *os.File) bool {
 	return true
 }
 
+// ExportResults writes the list of candidates to a JSON file.
 func (a *ShannonEntropyAnalyzer) ExportResults(candidates []SecretCandidate, outputPath string) error {
 	file, err := os.Create(outputPath)
 	if err != nil {
@@ -735,7 +752,7 @@ func (a *ShannonEntropyAnalyzer) ExportResults(candidates []SecretCandidate, out
 	}
 	defer func() {
 		if cerr := file.Close(); cerr != nil {
-			// ignore close error
+			// ignore
 		}
 	}()
 
@@ -749,18 +766,21 @@ func (a *ShannonEntropyAnalyzer) ExportResults(candidates []SecretCandidate, out
 	})
 }
 
+// GetStats returns the current statistics.
 func (a *ShannonEntropyAnalyzer) GetStats() AnalyzerStats {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
 	return a.stats
 }
 
+// ClearCache clears all internal caches.
 func (a *ShannonEntropyAnalyzer) ClearCache() {
 	a.entropyCache = sync.Map{}
 	a.alphabetCache = sync.Map{}
 	a.falsePositiveCache = sync.Map{}
 }
 
+// PrintStats prints the current statistics to stdout.
 func (a *ShannonEntropyAnalyzer) PrintStats() {
 	stats := a.GetStats()
 	fmt.Printf("Statistics:\n")
