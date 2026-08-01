@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -52,6 +53,25 @@ func main() {
 	if showVersion {
 		fmt.Printf("Grabba v%s\nBuilt: %s\n", Version, BuildTime)
 		os.Exit(0)
+	}
+
+	// Нормализация путей
+	if filePath != "" {
+		abs, err := filepath.Abs(filePath)
+		if err == nil {
+			filePath = abs
+		}
+	}
+	if repoPath != "" {
+		abs, err := filepath.Abs(repoPath)
+		if err == nil {
+			repoPath = abs
+		}
+		// Проверка существования директории
+		if info, err := os.Stat(repoPath); err != nil || !info.IsDir() {
+			fmt.Printf("[-] Repository path '%s' does not exist or is not a directory\n", repoPath)
+			os.Exit(1)
+		}
 	}
 
 	entropyAnalyzer := analyzer.NewAnalyzer(minLength, maxLength, threshold, confidence)
@@ -123,11 +143,11 @@ func main() {
 			levelColor := ""
 			switch c.Level {
 			case analyzer.LevelVeryHigh:
-				levelColor = "\033[31m"
+				levelColor = "\033[31m" // red
 			case analyzer.LevelHigh:
-				levelColor = "\033[33m"
+				levelColor = "\033[33m" // yellow
 			default:
-				levelColor = "\033[36m"
+				levelColor = "\033[36m" // cyan
 			}
 
 			fmt.Printf("%s[%d] Level: %s%s\033[0m\n", levelColor, i+1, levelColor, c.Level)

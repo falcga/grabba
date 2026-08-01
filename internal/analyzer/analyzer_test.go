@@ -30,7 +30,7 @@ func TestAnalyzeText(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			candidates := analyzer.AnalyzeText(tt.text, "test.txt", true)
 			if len(candidates) < tt.minFound {
-				t.Errorf("[+] expected at least %d candidates, got %d", tt.minFound, len(candidates))
+				t.Errorf("expected at least %d candidates, got %d", tt.minFound, len(candidates))
 			}
 		})
 	}
@@ -55,7 +55,7 @@ func TestAnalyzeRepository(t *testing.T) {
 	)
 
 	if len(candidates) == 0 {
-		t.Error("[-] expected to find secrets in test repository")
+		t.Error("expected to find secrets in test repository")
 	}
 }
 
