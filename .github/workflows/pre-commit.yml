@@ -1,0 +1,42 @@
+name: Pre-commit Hook
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+  pull_request_target:
+    types: [opened, synchronize, reopened]
+
+jobs:
+  pre-commit:
+    name: Pre-commit Checks
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+          cache: true
+
+      - name: Install pre-commit
+        run: |
+          pip install pre-commit
+          pre-commit install
+
+      - name: Run pre-commit on all files
+        run: pre-commit run --all-files --show-diff-on-failure
+
+      - name: Run Grabba entropy analysis
+        run: |
+          go build -o grabba ./cmd/grabba
+          find . -type f -name "*.go" -o -name "*.py" -o -name "*.js" -o -name "*.env" -o -name "*.json" -o -name "*.yml" -o -name "*.yaml" | \
+          while read file; do
+            echo "[ ] Analyzing: $file"
+            ./grabba --file "$file" --threshold 4.5 || echo "[-] Potential secret found in $file"
+          done

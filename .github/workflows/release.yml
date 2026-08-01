@@ -1,0 +1,67 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  release:
+    name: Create Release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+          cache: true
+
+      - name: Build for all platforms
+        run: make build-all
+
+      - name: Compress binaries
+        run: |
+          cd build
+          for file in grabba-*; do
+            gzip -9 "$file"
+          done
+          cd ..
+
+      - name: Generate checksums
+        run: |
+          cd build
+          sha256sum * > checksums.txt
+          cd ..
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            build/grabba-linux-amd64.gz
+            build/grabba-linux-arm64.gz
+            build/grabba-darwin-amd64.gz
+            build/grabba-darwin-arm64.gz
+            build/grabba-windows-amd64.exe.gz
+            build/checksums.txt
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Update Homebrew formula
+        if: success()
+        run: |
+          VERSION=${GITHUB_REF#refs/tags/v}
+          SHA256=$(sha256sum build/grabba-linux-amd64.gz | cut -d' ' -f1)
+          echo "[+] Version: $VERSION"
+          echo "[+] SHA256: $SHA256"
+          echo "[-] Homebrew formula update not configured"
