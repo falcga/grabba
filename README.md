@@ -1,6 +1,6 @@
 <img width="64" height="64" alt="logo" src="https://github.com/user-attachments/assets/d511fe74-e2cf-43eb-bfed-e993c70591eb" />
 
-# grabba: Secret Scanner 
+# grabba: Secret Scanner
 
 ## Overview
 
