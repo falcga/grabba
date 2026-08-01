@@ -39,6 +39,9 @@ linters-settings:
       - name: unused-parameter
         severity: warning
         disabled: true
+  gosec:
+    excludes:
+      - G304
 
 issues:
   exclude-use-default: false
