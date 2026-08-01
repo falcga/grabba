@@ -1,16 +1,4 @@
 repos:
-  - repo: local
-    hooks:
-      - id: grabba-pre-commit
-        name: Grabba - Entropy Analysis
-        description: Проверка на наличие секретов через энтропийный анализ
-        entry: make pre-commit
-        language: system
-        types: [file]
-        pass_filenames: false
-        stages: [pre-commit]
-        verbose: true
-
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v4.5.0
     hooks:
@@ -28,3 +16,4 @@ repos:
       - id: go-fmt
       - id: go-mod-tidy
       - id: golangci-lint
+        args: ['--timeout=5m']

@@ -83,7 +83,6 @@ func main() {
 	switch {
 	case filePath != "":
 		fmt.Printf("[ ] Analyzing file: %s\n", filePath)
-		// #nosec G304 – filePath is from trusted input (argument)
 		content, err := os.ReadFile(filePath)
 		if err != nil {
 			fmt.Printf("[-] Error reading file: %v\n", err)
@@ -134,11 +133,12 @@ func main() {
 
 		fmt.Printf("\n[-] Found %d potential secrets:\n\n", len(candidates))
 
-		for idx, c := range candidates {
-			if idx >= 20 {
+		for i := range candidates {
+			if i >= 20 {
 				fmt.Printf("\n... and %d more results\n", len(candidates)-20)
 				break
 			}
+			c := &candidates[i]
 
 			var levelColor string
 			switch c.Level {
@@ -150,7 +150,7 @@ func main() {
 				levelColor = "\033[36m"
 			}
 
-			fmt.Printf("%s[%d] Level: %s%s\033[0m\n", levelColor, idx+1, levelColor, c.Level)
+			fmt.Printf("%s[%d] Level: %s%s\033[0m\n", levelColor, i+1, levelColor, c.Level)
 			fmt.Printf("    File: %s:%d\n", c.FilePath, c.LineNumber)
 			fmt.Printf("    Secret: %s\n", truncateString(c.Text, 60))
 			fmt.Printf("    Entropy: %.2f bits | Confidence: %.1f%%\n", c.Entropy, c.Confidence*100)

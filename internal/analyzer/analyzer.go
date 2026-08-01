@@ -68,11 +68,11 @@ type ShannonEntropyAnalyzer struct {
 	entropyCache       sync.Map
 	falsePositiveCache sync.Map
 	mu                 sync.RWMutex
-	stats              AnalyzerStats
+	stats              Stats
 }
 
-// AnalyzerStats holds statistics about the analysis run.
-type AnalyzerStats struct {
+// Stats holds statistics about the analysis run.
+type Stats struct {
 	FilesScanned    int64
 	LinesProcessed  int64
 	CandidatesFound int64
@@ -81,6 +81,7 @@ type AnalyzerStats struct {
 	ProcessingTime  time.Duration
 }
 
+// Alphabets is a map of predefined character sets used for entropy calculation.
 var Alphabets = map[string]string{
 	"base64":       "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=",
 	"base64_url":   "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_",
@@ -228,7 +229,7 @@ func (a *ShannonEntropyAnalyzer) extractSecretFromLine(line string) (string, boo
 		startIdx := loc[1]
 		remaining := line[startIdx:]
 
-		trimmed := strings.TrimLeft(remaining, " \t:=:")
+		trimmed := strings.TrimLeft(remaining, " \t=:")
 
 		if trimmed == "" {
 			continue
@@ -244,7 +245,6 @@ func (a *ShannonEntropyAnalyzer) extractSecretFromLine(line string) (string, boo
 				secret = trimmed[1:]
 			}
 		} else {
-			// #nosec G304 – this is a regex pattern, not user input
 			secretChars := regexp.MustCompile(`^[a-zA-Z0-9\+/=\-_.]+`)
 			match := secretChars.FindString(trimmed)
 			if match != "" {
@@ -362,7 +362,6 @@ func (a *ShannonEntropyAnalyzer) calculateEntropy(text, alphabet string) float64
 		}
 
 		entropy := 0.0
-		// Use pointer to avoid copying the array
 		for _, count := range &freq {
 			if count > 0 {
 				prob := float64(count) / float64(validCount)
@@ -599,15 +598,12 @@ func (a *ShannonEntropyAnalyzer) AnalyzeRepository(repoPath string, fileExtensio
 }
 
 func (a *ShannonEntropyAnalyzer) analyzeFile(filePath string) []SecretCandidate {
-	// #nosec G304 – filePath is from trusted source (repository walk)
 	file, err := os.Open(filePath)
 	if err != nil {
 		return nil
 	}
 	defer func() {
-		if cerr := file.Close(); cerr != nil {
-			// ignore
-		}
+		_ = file.Close()
 	}()
 
 	if !isTextFile(file) {
@@ -751,9 +747,7 @@ func (a *ShannonEntropyAnalyzer) ExportResults(candidates []SecretCandidate, out
 		return err
 	}
 	defer func() {
-		if cerr := file.Close(); cerr != nil {
-			// ignore
-		}
+		_ = file.Close()
 	}()
 
 	encoder := json.NewEncoder(file)
@@ -767,7 +761,7 @@ func (a *ShannonEntropyAnalyzer) ExportResults(candidates []SecretCandidate, out
 }
 
 // GetStats returns the current statistics.
-func (a *ShannonEntropyAnalyzer) GetStats() AnalyzerStats {
+func (a *ShannonEntropyAnalyzer) GetStats() Stats {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
 	return a.stats
