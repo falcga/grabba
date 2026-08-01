@@ -1,4 +1,4 @@
-name: Pre-commit Hook
+name: Pre-commit Checks
 
 on:
   push:
@@ -24,6 +24,11 @@ jobs:
           go-version: '1.21'
           cache: true
 
+      - name: Install golangci-lint
+        run: |
+          curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(go env GOPATH)/bin v1.54.2
+          echo "$(go env GOPATH)/bin" >> $GITHUB_PATH
+
       - name: Install pre-commit
         run: |
           pip install pre-commit
@@ -37,6 +42,6 @@ jobs:
           go build -o grabba ./cmd/grabba
           find . -type f -name "*.go" -o -name "*.py" -o -name "*.js" -o -name "*.env" -o -name "*.json" -o -name "*.yml" -o -name "*.yaml" | \
           while read file; do
-            echo "[ ] Analyzing: $file"
-            ./grabba --file "$file" --threshold 4.5 || echo "[-] Potential secret found in $file"
-          done
+            echo "Analyzing: $file"
+            ./grabba --file "$file" --threshold 4.5 || echo "⚠️  Potential secret found in $file"
+          done || true
