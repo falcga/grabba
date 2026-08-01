@@ -85,15 +85,15 @@ var Alphabets = map[string]string{
 }
 
 var (
-	secretPatterns = map[string]*regexp.Regexp{
-		"api_key":      regexp.MustCompile(`(?i)(?:api[_\s-]?key|apikey|api-token)[\s:=-]+([a-zA-Z0-9_\-]{20,})`),
-		"aws_key":      regexp.MustCompile(`AKIA[0-9A-Z]{16,}`),
-		"private_key":  regexp.MustCompile(`-----BEGIN (?:RSA|DSA|EC|OPENSSH) PRIVATE KEY-----`),
-		"password":     regexp.MustCompile(`(?i)(?:password|passwd|pwd)[\s:=-]+([^\s]{8,})`),
-		"token":        regexp.MustCompile(`(?i)(?:token|secret|bearer)[\s:=-]+([a-zA-Z0-9_\-\.]{20,})`),
-		"jwt":          regexp.MustCompile(`eyJ[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+`),
-		"url_secret":   regexp.MustCompile(`[?&](?:key|token|secret|api_key|apikey)=([a-zA-Z0-9_\-\.]{8,})`),
-		"generic_high": regexp.MustCompile(`[\'"` + "`" + `]([a-zA-Z0-9+/=]{20,}[\'"` + "`" + `])`),
+	keywordPatterns = []*regexp.Regexp{
+		regexp.MustCompile(`(?i)(?:api[_\s-]?key|apikey|api-token|secret|token|password|passwd|pwd|bearer|access_key|private_key)`),
+	}
+
+	exactPatterns = map[string]*regexp.Regexp{
+		"aws_key":     regexp.MustCompile(`AKIA[0-9A-Z]{16,}`),
+		"private_key": regexp.MustCompile(`-----BEGIN (?:RSA|DSA|EC|OPENSSH) PRIVATE KEY-----`),
+		"jwt":         regexp.MustCompile(`eyJ[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+\.[a-zA-Z0-9_-]+`),
+		"url_secret":  regexp.MustCompile(`[?&](?:key|token|secret|api_key|apikey)=([a-zA-Z0-9_\-\.]{8,})`),
 	}
 
 	falsePositivePatterns = []*regexp.Regexp{
@@ -208,10 +208,51 @@ func (a *ShannonEntropyAnalyzer) analyzeTextParallel(lines []string, filePath st
 	return candidates
 }
 
+func (a *ShannonEntropyAnalyzer) extractSecretFromLine(line string) (string, bool) {
+	for _, kw := range keywordPatterns {
+		loc := kw.FindStringIndex(line)
+		if loc == nil {
+			continue
+		}
+		startIdx := loc[1]
+		remaining := line[startIdx:]
+
+		trimmed := strings.TrimLeft(remaining, " \t:=:")
+
+		if len(trimmed) == 0 {
+			continue
+		}
+
+		var secret string
+		if strings.HasPrefix(trimmed, `"`) || strings.HasPrefix(trimmed, `'`) {
+			quote := trimmed[0]
+			endIdx := strings.IndexByte(trimmed[1:], quote)
+			if endIdx != -1 {
+				secret = trimmed[1 : endIdx+1]
+			} else {
+				secret = trimmed[1:]
+			}
+		} else {
+			secretChars := regexp.MustCompile(`^[a-zA-Z0-9\+\/\=\-_\.]+`)
+			match := secretChars.FindString(trimmed)
+			if match != "" {
+				secret = match
+			} else {
+				continue
+			}
+		}
+
+		if secret != "" {
+			return secret, true
+		}
+	}
+	return "", false
+}
+
 func (a *ShannonEntropyAnalyzer) analyzeLine(line, filePath string, lineNum int, candidates *[]SecretCandidate) {
 	atomic.AddInt64(&a.stats.LinesProcessed, 1)
-	
-	for patternName, pattern := range secretPatterns {
+
+	for patternName, pattern := range exactPatterns {
 		matches := pattern.FindAllStringSubmatch(line, -1)
 		for _, match := range matches {
 			var secret string
@@ -220,22 +261,33 @@ func (a *ShannonEntropyAnalyzer) analyzeLine(line, filePath string, lineNum int,
 			} else {
 				secret = match[0]
 			}
-			
 			if len(secret) < a.MinLength || len(secret) > a.MaxLength {
 				continue
 			}
-			
 			if a.isFalsePositive(secret) {
 				continue
 			}
-			
 			if candidate := a.analyzeCandidate(secret, line, lineNum, filePath, patternName); candidate != nil {
 				*candidates = append(*candidates, *candidate)
 				atomic.AddInt64(&a.stats.CandidatesFound, 1)
 			}
 		}
 	}
+
+	if secret, found := a.extractSecretFromLine(line); found {
+		if len(secret) < a.MinLength || len(secret) > a.MaxLength {
+			return
+		}
+		if a.isFalsePositive(secret) {
+			return
+		}
+		if candidate := a.analyzeCandidate(secret, line, lineNum, filePath, "keyword"); candidate != nil {
+			*candidates = append(*candidates, *candidate)
+			atomic.AddInt64(&a.stats.CandidatesFound, 1)
+		}
+	}
 }
+
 func (a *ShannonEntropyAnalyzer) analyzeCandidate(secret, line string, lineNum int, filePath, patternName string) *SecretCandidate {
 	alphabet := a.determineBestAlphabet(secret)
 	if alphabet == "" {
@@ -421,17 +473,16 @@ func (a *ShannonEntropyAnalyzer) calculateConfidence(secret string, entropy floa
 	confidence += lengthFactor * 0.2
 
 	patternWeights := map[string]float64{
-		"private_key":   0.35,
 		"aws_key":       0.35,
+		"private_key":   0.35,
 		"jwt":           0.30,
-		"api_key":       0.25,
-		"token":         0.20,
-		"password":      0.20,
+		"keyword":       0.25,
 		"url_secret":    0.15,
-		"generic_high":  0.10,
 	}
 	if weight, ok := patternWeights[patternName]; ok {
 		confidence += weight
+	} else {
+		confidence += 0.10
 	}
 
 	uniqueRatio := float64(len(uniqueChars(secret))) / float64(len(secret))

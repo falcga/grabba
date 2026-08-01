@@ -15,8 +15,33 @@ func TestAnalyzeText(t *testing.T) {
 		minFound int
 	}{
 		{
-			name:     "contains secret",
-			text:     `SECRET_KEY = "f7g8h9j0k1l2m3n4o5p6q7r8s9t0u1v2"`,
+			name:     "secret without quotes",
+			text:     `API_KEY = aB3dE5fG7hJ9kL1mN2oP4qR6sT8uV0wX`,
+			minFound: 1,
+		},
+		{
+			name:     "secret with double quotes",
+			text:     `API_KEY = "aB3dE5fG7hJ9kL1mN2oP4qR6sT8uV0wX"`,
+			minFound: 1,
+		},
+		{
+			name:     "secret with single quotes",
+			text:     `API_KEY = 'aB3dE5fG7hJ9kL1mN2oP4qR6sT8uV0wX'`,
+			minFound: 1,
+		},
+		{
+			name:     "secret with special chars (Base64)",
+			text:     `TOKEN = "aB3dE5fG7hJ9kL1mN2oP4qR6sT8uV0wX+/="`,
+			minFound: 1,
+		},
+		{
+			name:     "secret with colon separator",
+			text:     `password: aB3dE5fG7hJ9kL1mN2oP4qR6sT8uV0wX`,
+			minFound: 1,
+		},
+		{
+			name:     "secret without spaces",
+			text:     `SECRET_KEY=aB3dE5fG7hJ9kL1mN2oP4qR6sT8uV0wX`,
 			minFound: 1,
 		},
 		{
@@ -41,27 +66,36 @@ func TestAnalyzeRepository(t *testing.T) {
 
 	tmpDir := t.TempDir()
 
-	secretFile := filepath.Join(tmpDir, "test.env")
-	err := os.WriteFile(secretFile, []byte("API_KEY=abc123def456ghi789jkl"), 0644)
-	if err != nil {
-		t.Fatal(err)
+	files := map[string]string{
+		"test1.env": `API_KEY=aB3dE5fG7hJ9kL1mN2oP4qR6sT8uV0wX`,
+		"test2.env": `API_KEY = "aB3dE5fG7hJ9kL1mN2oP4qR6sT8uV0wX"`,
+		"test3.env": `TOKEN = 'aB3dE5fG7hJ9kL1mN2oP4qR6sT8uV0wX'`,
+		"test4.env": `password: aB3dE5fG7hJ9kL1mN2oP4qR6sT8uV0wX`,
+		"test5.txt": `SECRET_KEY=aB3dE5fG7hJ9kL1mN2oP4qR6sT8uV0wX`,
+	}
+
+	for filename, content := range files {
+		path := filepath.Join(tmpDir, filename)
+		if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+			t.Fatal(err)
+		}
 	}
 
 	candidates := analyzer.AnalyzeRepository(
 		tmpDir,
-		[]string{".env"},
+		[]string{".env", ".txt"},
 		1024,
 		[]string{},
 	)
 
-	if len(candidates) == 0 {
-		t.Error("expected to find secrets in test repository")
+	if len(candidates) < 5 {
+		t.Errorf("expected at least 5 candidates, got %d", len(candidates))
 	}
 }
 
 func BenchmarkAnalyzeText(b *testing.B) {
 	analyzer := NewAnalyzer(8, 256, 4.5, 0.6)
-	text := "SECRET_KEY = \"f7g8h9j0k1l2m3n4o5p6q7r8s9t0u1v2\"\n"
+	text := "API_KEY = \"aB3dE5fG7hJ9kL1mN2oP4qR6sT8uV0wX\"\n"
 
 	for i := 0; i < 1000; i++ {
 		text += "Normal line without secrets\n"
